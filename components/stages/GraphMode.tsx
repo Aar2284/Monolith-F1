@@ -55,8 +55,16 @@ const GRID_LINE_PCTS = Array.from(
 );
 const Y_LABEL_RIGHT_PCT = ((GRAPH_PADDING.left - 8) / VB_W) * 100;
 
+const ANALYSIS_SCOPE = "season" as const;
+
 const CARD =
   "rounded-[24px] bg-black/60 backdrop-blur-sm border border-white/[0.06]";
+
+function formatSecondsTick(seconds: number): string {
+  if (Math.abs(seconds) < 0.0005) return "0.000";
+  const sign = seconds > 0 ? "+" : "-";
+  return `${sign}${Math.abs(seconds).toFixed(3)}`;
+}
 
 /* Direction each card flies in from — Mac trackpad spread style.
    Vector points FROM where the card starts TO its final grid position. */
@@ -75,46 +83,59 @@ export function GraphMode() {
   const backBtnRef = useRef<HTMLButtonElement>(null);
   const isExitingRef = useRef(false);
   const windFlyoutTlRef = useRef<gsap.core.Timeline | null>(null);
+  const mountTlRef = useRef<gsap.core.Timeline | null>(null);
   const cardRefs = useRef<(HTMLDivElement | null)[]>([]);
   const graphContainerRef = useRef<HTMLDivElement>(null);
+
+  const getCards = () => cardRefs.current.filter(Boolean) as HTMLDivElement[];
 
   const [showGraph, setShowGraph] = useState(false);
   const [cardExpanded, setCardExpanded] = useState(false);
   const [graphHeight, setGraphHeight] = useState(220);
-  const analysisScope = "season" as const;
 
   const { selectedTeamId, isWindTunnelActive, setSelectedTeamId, setCameraMode, setStage } =
     useAppStore();
 
-  const team = selectedTeamId ? getTeamById(selectedTeamId) : null;
-  const drivers = selectedTeamId ? getDriversByTeamId(selectedTeamId) : [];
+  const team = useMemo(
+    () => (selectedTeamId ? getTeamById(selectedTeamId) : null),
+    [selectedTeamId],
+  );
+  const drivers = useMemo(
+    () => (selectedTeamId ? getDriversByTeamId(selectedTeamId) : []),
+    [selectedTeamId],
+  );
 
   const medianGap = useMemo(() => {
     if (drivers.length !== 2) return null;
     return calculateMedianQualifyingGap(
       drivers[0].id,
       drivers[1].id,
-      analysisScope,
+      ANALYSIS_SCOPE,
     );
-  }, [analysisScope, drivers]);
+  }, [drivers]);
 
   const headToHead = useMemo(() => {
     if (drivers.length !== 2) return null;
-    return calculateHeadToHead(drivers[0].id, drivers[1].id, analysisScope);
-  }, [analysisScope, drivers]);
+    return calculateHeadToHead(drivers[0].id, drivers[1].id, ANALYSIS_SCOPE);
+  }, [drivers]);
 
   const q3Rates = useMemo(() => {
     if (drivers.length !== 2) return null;
     return {
-      driver1: calculateQ3Rate(drivers[0].id, analysisScope),
-      driver2: calculateQ3Rate(drivers[1].id, analysisScope),
+      driver1: calculateQ3Rate(drivers[0].id, ANALYSIS_SCOPE),
+      driver2: calculateQ3Rate(drivers[1].id, ANALYSIS_SCOPE),
     };
-  }, [analysisScope, drivers]);
+  }, [drivers]);
 
   const perRaceGaps = useMemo(() => {
     if (drivers.length !== 2) return [];
     return getPerRaceQualifyingGaps(drivers[0].id, drivers[1].id, 24);
   }, [drivers]);
+
+  const reversedGaps = useMemo(
+    () => [...perRaceGaps].reverse(),
+    [perRaceGaps],
+  );
 
   const graphData = useMemo(() => {
     return perRaceGaps.map((gap) => ({
@@ -167,12 +188,6 @@ export function GraphMode() {
     [yTicks],
   );
 
-  const formatSecondsTick = useCallback((seconds: number): string => {
-    if (Math.abs(seconds) < 0.0005) return "0.000";
-    const sign = seconds > 0 ? "+" : "-";
-    return `${sign}${Math.abs(seconds).toFixed(3)}`;
-  }, []);
-
   const formatGapDisplay = (ms: number): string => {
     const absMs = Math.abs(ms);
     const seconds = Math.floor(absMs / 1000);
@@ -196,7 +211,7 @@ export function GraphMode() {
 
   /* ── Card fly-in animation on mount ── */
   useEffect(() => {
-    const cards = cardRefs.current.filter(Boolean) as HTMLDivElement[];
+    const cards = getCards();
     if (cards.length === 0) return;
 
     // Set scattered starting positions
@@ -219,6 +234,7 @@ export function GraphMode() {
         setTimeout(() => setShowGraph(true), 200);
       },
     });
+    mountTlRef.current = tl;
 
     cards.forEach((card, i) => {
       tl.to(
@@ -235,13 +251,15 @@ export function GraphMode() {
         i * 0.06,
       );
     });
+
+    return () => { tl.kill(); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Wind tunnel flyout: scatter cards when wind tunnel is active
   useEffect(() => {
     if (isExitingRef.current) return;
 
-    const cards = cardRefs.current.filter(Boolean) as HTMLDivElement[];
+    const cards = getCards();
 
     if (isWindTunnelActive) {
       windFlyoutTlRef.current?.kill();
@@ -281,6 +299,8 @@ export function GraphMode() {
       tl.to(overlayRef.current, { opacity: 1, duration: 0.5, ease: "power2.inOut" }, 0.08);
       windFlyoutTlRef.current = null;
     }
+
+    return () => { windFlyoutTlRef.current?.kill(); };
   }, [isWindTunnelActive]);
 
   /* ── Back to VERSUS ── */
@@ -290,7 +310,7 @@ export function GraphMode() {
     windFlyoutTlRef.current?.kill();
     setCameraMode("cinematic");
 
-    const cards = cardRefs.current.filter(Boolean) as HTMLDivElement[];
+    const cards = getCards();
     const tl = gsap.timeline({
       onComplete: () => {
         setStage("VERSUS");
@@ -338,7 +358,7 @@ export function GraphMode() {
     (teamId: string) => {
       if (teamId === selectedTeamId) return;
 
-      const cards = cardRefs.current.filter(Boolean) as HTMLDivElement[];
+      const cards = getCards();
       setShowGraph(false);
       setCardExpanded(false);
 
@@ -734,7 +754,7 @@ export function GraphMode() {
               </p>
             </div>
             <div className="flex flex-col gap-1.5 overflow-y-auto no-scrollbar min-h-0">
-              {[...perRaceGaps].reverse().map((gap) => (
+              {reversedGaps.map((gap) => (
                 <div
                   key={gap.raceId}
                   className="flex items-center justify-between"

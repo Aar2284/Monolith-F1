@@ -8,9 +8,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import pytest
-from pytest import approx
-
 from f1pipeline import compute_stats as cs
 from f1pipeline.schema import QualifyingResult
 
@@ -186,7 +183,7 @@ class TestComputeTeammateGaps:
         assert r.teamId == "ferrari"
         assert r.driver1Id == "charles_leclerc"
         assert r.driver2Id == "lewis_hamilton"
-        assert r.medianGap == approx(-125.0, rel=1e-3)
+        assert abs(r.medianGap + 125.0) < 1e-3
 
     def test_negative_gap_means_driver1_faster(self, three_races: list[Any], ferrari_team: Any, make_qual: Any):
         # LEC (driver1) faster → (t1 - t2) negative → medianGap < 0
@@ -296,7 +293,7 @@ class TestComputeTeammateGaps:
             qual.append(make_qual(race.id, "charles_leclerc", q3Time="1:20.000", bestTime="1:20.000"))
             qual.append(make_qual(race.id, "lewis_hamilton",  q3Time="1:20.100", bestTime="1:20.100"))
 
-        gaps, h2h, q3 = cs.compute_all_stats(
+        gaps, _, _ = cs.compute_all_stats(
             three_races, qual, [ferrari_team], [leclerc_driver, hamilton_driver]
         )
 
@@ -448,7 +445,7 @@ class TestComputeQ3Rates:
         r = result["charles_leclerc.season"]
         assert r.q3Appearances == 2
         assert r.totalRaces == 3
-        assert r.q3Rate == approx(round(2 / 3, 4))
+        assert abs(r.q3Rate - 0.6667) < 1e-4
 
     def test_dns_excluded_from_total_races(self, three_races: list[Any], leclerc_driver: Any, make_qual: Any):
         # Race 2: bestTime=None (DNS / no time set) → excluded from totalRaces

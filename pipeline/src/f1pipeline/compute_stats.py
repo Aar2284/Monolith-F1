@@ -109,6 +109,11 @@ def compute_teammate_gaps(
             gaps.append((t1 - t2) / ref * 100 * 1000)
 
         median_gap = round(statistics.median(gaps), 1) if gaps else 0.0
+        gap_consistency = (
+            round(statistics.median([abs(g - median_gap) for g in gaps]), 1)
+            if len(gaps) >= 2
+            else None
+        )
 
         key = f"{team.id}.{scope}"
         results[key] = MedianGapResult(
@@ -117,6 +122,7 @@ def compute_teammate_gaps(
             driver2Id=d2_id,
             medianGap=median_gap,
             medianGapFormatted=_format_gap(median_gap),
+            gapConsistency=gap_consistency,
             raceCount=len(gaps),
             scope=scope,
         )

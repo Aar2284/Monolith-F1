@@ -8,8 +8,11 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from f1pipeline import compute_stats as cs
 from f1pipeline.schema import QualifyingResult
+from pipeline.tests.conftest import ferrari_team, make_qual, three_races
 
 
 # ===========================================================================
@@ -299,6 +302,43 @@ class TestComputeTeammateGaps:
 
         assert "ferrari.season" in gaps
         assert "ferrari.last5" in gaps
+
+    def test_gap_consistency_is_none_for_single_race(self, three_races, ferrari_team, make_qual):
+        # Only 1 race → MAD undefined → gapConsistency must be None, not 0.0
+        qual = [
+            make_qual("race_1", "charles_leclerc", q3Time="1:20.000", bestTime="1:20.000"),
+            make_qual("race_1", "lewis_hamilton",  q3Time="1:20.100", bestTime="1:20.100"),
+        ]
+        result = cs.compute_teammate_gaps(three_races, qual, [ferrari_team], "season")
+        assert result["ferrari.season"].gapConsistency is None
+
+    def test_gap_consistency_zero_for_identical_gaps(self, three_races, ferrari_team, make_qual):
+        # Same gap every race → MAD = 0.0 (perfectly consistent)
+        qual = []
+        for race in three_races:
+            qual.append(make_qual(race.id, "charles_leclerc", q3Time="1:20.000", bestTime="1:20.000"))
+            qual.append(make_qual(race.id, "lewis_hamilton",  q3Time="1:20.100", bestTime="1:20.100"))
+        result = cs.compute_teammate_gaps(three_races, qual, [ferrari_team], "season")
+        assert result["ferrari.season"].gapConsistency == pytest.approx(0.0, abs=0.1)
+
+    def test_gap_consistency_nonzero_for_varying_gaps(self, three_races, ferrari_team, make_qual):
+        # Varying gaps across races → MAD > 0
+        qual = [
+            make_qual("race_1", "charles_leclerc", q3Time="1:20.000", bestTime="1:20.000"),
+            make_qual("race_1", "lewis_hamilton",  q3Time="1:20.500", bestTime="1:20.500"),
+            make_qual("race_2", "charles_leclerc", q3Time="1:20.000", bestTime="1:20.000"),
+            make_qual("race_2", "lewis_hamilton",  q3Time="1:20.050", bestTime="1:20.050"),
+            make_qual("race_3", "charles_leclerc", q3Time="1:20.000", bestTime="1:20.000"),
+            make_qual("race_3", "lewis_hamilton",  q3Time="1:21.000", bestTime="1:21.000"),
+        ]
+        result = cs.compute_teammate_gaps(three_races, qual, [ferrari_team], "season")
+        assert result["ferrari.season"].gapConsistency is not None
+        assert result["ferrari.season"].gapConsistency > 0
+
+    def test_gap_consistency_none_for_zero_races(self, three_races, ferrari_team):
+        # No qualifying data → gapConsistency must be None
+        result = cs.compute_teammate_gaps(three_races, [], [ferrari_team], "season")
+        assert result["ferrari.season"].gapConsistency is None
 
 
 # ===========================================================================
